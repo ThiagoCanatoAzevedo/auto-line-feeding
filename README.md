@@ -1,10 +1,20 @@
-# Auto Line Feeding (ALF) — Backend
+# CIAL — Central Inteligente de Atendimento de Linha
 
-Sistema backend de automação de abastecimento de linhas de montagem. Integra-se ao SAP, processa planilhas de peças e previsões, e orquestra o fluxo completo de requisição, verificação e fechamento de materiais via eventos MQTT.
+MVP de automação de abastecimento de linhas de montagem. Integra-se ao SAP, processa planilhas de peças e previsões, e orquestra o fluxo completo de requisição, verificação e fechamento de materiais via eventos MQTT.
 
 ## Arquitetura
 
-O backend é dividido em **4 microsserviços FastAPI** independentes:
+### Frontend
+
+Aplicação **React 19 + TypeScript + Vite + Tailwind CSS v4**. Compila em um único HTML (via `vite-plugin-singlefile`) servido pelo backend.
+
+- Páginas: Landing (`/`), Login (`/login`), Register (`/register`)
+- Autenticação JWT com suporte a "lembrar-me"
+- Tema claro/escuro persistido
+
+### Backend
+
+Dividido em **4 microsserviços FastAPI** independentes:
 
 | Serviço | Porta | Função |
 |---|---|---|
@@ -16,7 +26,13 @@ O backend é dividido em **4 microsserviços FastAPI** independentes:
 ### Fluxo de Dados
 
 ```
-MQTT Broker (Linha de Montagem)
+ Frontend (React + Vite)
+       │
+       │ HTTP (porta 8003)
+       ▼
+ Auth (8003) ──► MySQL (auth)
+       │
+ MQTT Broker (Linha de Montagem)
        │
        │ mensagem de evento
        ▼
@@ -24,27 +40,30 @@ MQTT Broker (Linha de Montagem)
        │
        │ chamadas HTTP
        ▼
-   Core (8002)
+   Core (8002) ──► MySQL (core)
        │
-       ├──► Helper Files (8004) — planilhas PKMC/PK05
+       ├──► Helper Files (8004) ──► MySQL (static)
        ├──► SAP GUI — transações LM01 / LT22
-       ├──► API externa — dados da linha de montagem
-       └──► MySQL — bancos auth, core, static
-
- Auth (8003) — JWT para todos os serviços
+       └──► API externa — dados da linha de montagem
 ```
 
 ## Tecnologias
 
-- **Python 3.10**
-- **FastAPI** + **Uvicorn**
-- **SQLAlchemy 2.0** + **Alembic**
+### Backend
+- **Python 3.10** · **FastAPI** · **Uvicorn**
+- **SQLAlchemy 2.0** · **Alembic**
 - **MySQL** (via `pymysql`)
 - **Polars** — processamento de dados em pipeline
 - **PyWin32** — automação SAP GUI (COM)
 - **Paho MQTT** — cliente MQTT via WebSocket
-- **PyJWT** / **Passlib (Argon2)** — autenticação
+- **PyJWT** · **Passlib (Argon2)** — autenticação
 - **Pytest** — testes
+
+### Frontend
+- **React 19** · **TypeScript** · **Vite**
+- **Tailwind CSS v4**
+- **React Router DOM** · **Lucide React**
+- **vite-plugin-singlefile** — build em único HTML
 
 ## Pré-requisitos
 
@@ -52,38 +71,36 @@ MQTT Broker (Linha de Montagem)
 - MySQL rodando (bancos `auth`, `core`, `static` criados)
 - SAP GUI instalado (para automação SAP)
 - Windows (dependência `pywin32` para COM)
+- Node.js (para desenvolvimento do frontend)
 
 ## Instalação
 
-Para cada microsserviço:
+### Backend
+
+Para cada microsserviço em `backend/`:
 
 ```bash
 cd backend\<servico>
 python -m venv venv
 .\venv\Scripts\activate
 pip install -r requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org
-```
-
-Copie o arquivo de configuração:
-
-```bash
 copy config\.env.example config\.env
 # Edite config\.env com as credenciais do seu ambiente
+alembic upgrade head
 ```
 
-Execute as migrations:
+### Frontend
 
 ```bash
-alembic upgrade head
+cd frontend
+npm install
 ```
 
 ## Execução
 
-Cada microsserviço roda independentemente:
+### Backend
 
-```bash
-python main.py
-```
+Cada microsserviço roda independentemente com `python main.py`:
 
 | Serviço | URL |
 |---|---|
@@ -92,18 +109,22 @@ python main.py
 | Auth | http://127.0.0.1:8003 |
 | Helper Files | http://127.0.0.1:8004 |
 
-### Documentação interativa (Swagger)
+Documentação Swagger: `/orchestrator-docs`, `/core-docs`, `/auth-docs`, `/static-files-docs`
 
-- Orchestrator: `/orchestrator-docs`
-- Core: `/core-docs`
-- Auth: `/auth-docs`
-- Helper Files: `/static-files-docs`
+### Frontend
+
+```bash
+npm run dev      # Dev server com hot-reload
+npm run build    # Build para single HTML
+npm run preview  # Preview do build
+```
 
 ## Testes
 
+### Backend
+
 ```bash
 pytest
-# ou com cobertura
 pytest --cov=.
 ```
 
@@ -122,20 +143,31 @@ Quando uma mensagem MQTT é recebida, o orchestrator executa em sequência:
 ## Estrutura do Projeto
 
 ```
-backend/
-├── auth/              # Microsserviço de autenticação
-│   ├── modules/       # register, access, list, update, delete
-│   ├── common/        # security, services
-│   └── database/      # engine, session, migrations
-├── core/              # Microsserviço de negócio
-│   ├── modules/       # assembly, consumption, forecast,
-│   │                  # requests_builder, requests_checker,
-│   │                  # requests_closure, sap_manager
-│   └── database/      # engine, session, migrations
-├── helper_files/      # Microsserviço de arquivos estáticos
-│   ├── modules/       # pkmc, pk05, files
-│   └── database/      # engine, session, migrations
-└── orchestrator/      # Orquestrador MQTT
-    ├── modules/       # mqtt_listener, pipeline
-    └── config/        # settings
+auto-line-feeding/
+├── frontend/
+│   ├── src/
+│   │   ├── pages/         # LandingPage, LoginPage, RegisterPage
+│   │   ├── components/    # ThemeToggle
+│   │   ├── context/       # ThemeContext
+│   │   ├── utils/         # cn()
+│   │   └── assets/        # Imagens, logos
+│   ├── package.json
+│   └── vite.config.ts
+├── backend/
+│   ├── auth/              # Microsserviço de autenticação
+│   │   ├── modules/       # register, access, list, update, delete
+│   │   ├── common/        # security, services
+│   │   └── database/      # engine, session, migrations
+│   ├── core/              # Microsserviço de negócio
+│   │   ├── modules/       # assembly, consumption, forecast,
+│   │   │                  # requests_builder, requests_checker,
+│   │   │                  # requests_closure, sap_manager
+│   │   └── database/
+│   ├── helper_files/      # Microsserviço de arquivos estáticos
+│   │   ├── modules/       # pkmc, pk05, files
+│   │   └── database/
+│   └── orchestrator/      # Orquestrador MQTT
+│       ├── modules/       # mqtt_listener, pipeline
+│       └── config/
+└── README.md
 ```
